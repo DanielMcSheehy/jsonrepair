@@ -55,7 +55,8 @@ class StringOutputBuffer implements OutputBuffer {
     this.tail = buffer.substring(split)
   }
 
-  private flushChunks(minSize = this.bufferSize) {
+  // note: no default parameter here, since transpiled default parameters are slow
+  private flushChunks(minSize: number) {
     if (this.head.length + this.tail.length < minSize + this.chunkSize) {
       return
     }
@@ -93,7 +94,7 @@ class StringOutputBuffer implements OutputBuffer {
       this.tail = this.tail.substring(split)
     }
 
-    this.flushChunks()
+    this.flushChunks(this.bufferSize)
   }
 
   unshift(text: string) {
@@ -102,7 +103,7 @@ class StringOutputBuffer implements OutputBuffer {
     }
 
     this.head = text + this.head
-    this.flushChunks()
+    this.flushChunks(this.bufferSize)
   }
 
   remove(start: number, end?: number) {
@@ -187,7 +188,7 @@ class StringOutputBuffer implements OutputBuffer {
         // the last non-whitespace character is located in the tail
         this.tail =
           this.tail.substring(0, tailIndex) + textToInsert + this.tail.substring(tailIndex)
-        this.flushChunks()
+        this.flushChunks(this.bufferSize)
         return
       }
     }
@@ -210,7 +211,7 @@ class StringOutputBuffer implements OutputBuffer {
     }
 
     this.setBuffer(buffer.substring(0, bufferIndex) + textToInsert + buffer.substring(bufferIndex))
-    this.flushChunks()
+    this.flushChunks(this.bufferSize)
   }
 
   endsWithIgnoringWhitespace(char: string): boolean {

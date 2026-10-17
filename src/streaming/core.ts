@@ -14,12 +14,11 @@ import {
   isSingleQuote,
   isSingleQuoteEntity,
   isSingleQuoteLike,
-  isSpecialWhitespace,
+  isSpecialWhitespaceCode,
   isStartOfValue,
   isUnquotedStringDelimiter,
   isValidStringCharacter,
   isWhitespace,
-  isWhitespaceExceptNewline,
   matchHtmlEntity,
   maxHtmlEntityLength,
   regexUrlChar,
@@ -50,7 +49,12 @@ const escapeCharacters: { [key: string]: string } = {
   // note that \u is handled separately in parseString()
 }
 
+const codeTab = 0x9 // "\t"
+const codeNewline = 0xa // "\n"
+const codeReturn = 0xd // "\r"
 const codeSpace = 0x20 // " "
+const codeZero = 0x30 // "0"
+const codeNine = 0x39 // "9"
 const codeDoubleQuote = 0x22 // '"'
 const codeAmpersand = 0x26 // "&"
 const codeQuote = 0x27 // "'"
@@ -59,6 +63,10 @@ const codeGraveAccent = 0x60 // "`"
 const codeAcuteAccent = 0xb4 // "´"
 const codeLeftSingleQuote = 0x2018 // "‘"
 const codeRightDoubleQuote = 0x201d // "”"
+
+function isDigitCode(code: number): boolean {
+  return code >= codeZero && code <= codeNine
+}
 
 // character codes of the characters in isUnquotedStringDelimiter (except "\n")
 function isUnquotedStringDelimiterCode(code: number): boolean {
@@ -517,7 +525,10 @@ export function jsonrepairCore({
     return false
   }
 
-  function parseWhitespaceAndSkipComments(skipNewline = true): boolean {
+  // note: this function and parseString do not use default parameters, since
+  // transpiled default parameters are slow in hot functions
+  function parseWhitespaceAndSkipComments(skipNewlineOption?: boolean): boolean {
+    const skipNewline = skipNewlineOption !== false
     const start = i
 
     let changed = parseWhitespace(skipNewline)
@@ -532,15 +543,21 @@ export function jsonrepairCore({
   }
 
   function parseWhitespace(skipNewline: boolean): boolean {
-    const _isWhiteSpace = skipNewline ? isWhitespace : isWhitespaceExceptNewline
     const start = i
     let whitespace = ''
     let runStart = i
 
     while (true) {
-      if (_isWhiteSpace(input, i)) {
+      const code = input.charCodeAt(i)
+
+      if (
+        code === codeSpace ||
+        code === codeTab ||
+        code === codeReturn ||
+        (code === codeNewline && skipNewline)
+      ) {
         i++
-      } else if (isSpecialWhitespace(input, i)) {
+      } else if (isSpecialWhitespaceCode(code)) {
         // repair special whitespace
         whitespace += runStart < i ? `${input.substring(runStart, i)} ` : ' '
         i++
@@ -680,7 +697,9 @@ export function jsonrepairCore({
    *   and fixing the string by inserting a quote there, or stopping at a
    *   stop index detected in the first iteration.
    */
-  function parseString(stopAtDelimiter = false, stopAtIndex = -1): boolean {
+  function parseString(stopAtDelimiterOption?: boolean, stopAtIndexOption?: number): boolean {
+    const stopAtDelimiter = stopAtDelimiterOption === true
+    const stopAtIndex = stopAtIndexOption === undefined ? -1 : stopAtIndexOption
     const skipEscapeChars = input.charAt(i) === '\\'
     if (skipEscapeChars) {
       // repair: remove the first escape character
@@ -1022,7 +1041,7 @@ export function jsonrepairCore({
   function parseDigits(): string {
     const start = i
 
-    while (isDigit(input.charAt(i))) {
+    while (isDigitCode(input.charCodeAt(i))) {
       i++
     }
 
