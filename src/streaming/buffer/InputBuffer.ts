@@ -27,16 +27,20 @@ class StringInputBuffer implements InputBuffer {
   private _currentLength = 0
   private closed = false
 
+  // note: keep this check small and the throwing in a separate function,
+  // so the JavaScript engine can inline it in the hot charAt and charCodeAt
   private ensure(index: number) {
+    if (index < this.offset || (index >= this._currentLength && !this.closed)) {
+      this.throwIndexOutOfRange(index)
+    }
+  }
+
+  private throwIndexOutOfRange(index: number): never {
     if (index < this.offset) {
       throw new Error(`${indexOutOfRangeMessage} (index: ${index}, offset: ${this.offset})`)
     }
 
-    if (index >= this._currentLength) {
-      if (!this.closed) {
-        throw new Error(`${indexOutOfRangeMessage} (index: ${index})`)
-      }
-    }
+    throw new Error(`${indexOutOfRangeMessage} (index: ${index})`)
   }
 
   push(chunk: string) {
