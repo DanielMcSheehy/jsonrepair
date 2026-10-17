@@ -1,5 +1,6 @@
 export interface InputBuffer {
   push: (chunk: string) => void
+  flatten: () => void
   flush: (position: number) => void
   charAt: (index: number) => string
   charCodeAt: (index: number) => number
@@ -12,87 +13,108 @@ export interface InputBuffer {
 }
 
 export function createInputBuffer(): InputBuffer {
-  let buffer = ''
-  let offset = 0
-  let currentLength = 0
-  let closed = false
+  return new StringInputBuffer()
+}
 
-  function ensure(index: number) {
-    if (index < offset) {
-      throw new Error(`${indexOutOfRangeMessage} (index: ${index}, offset: ${offset})`)
+// Implemented as a class (rather than closures) so all buffers share the same
+// methods, which allows the JavaScript engine to inline the hot charAt and
+// charCodeAt calls in the parser.
+class StringInputBuffer implements InputBuffer {
+  private buffer = ''
+  private flatBuffer = '' // the buffer without the recently pushed chunks
+  private pushedChunks: string[] = []
+  private offset = 0
+  private _currentLength = 0
+  private closed = false
+
+  private ensure(index: number) {
+    if (index < this.offset) {
+      throw new Error(`${indexOutOfRangeMessage} (index: ${index}, offset: ${this.offset})`)
     }
 
-    if (index >= currentLength) {
-      if (!closed) {
+    if (index >= this._currentLength) {
+      if (!this.closed) {
         throw new Error(`${indexOutOfRangeMessage} (index: ${index})`)
       }
     }
   }
 
-  function push(chunk: string) {
-    buffer += chunk
-    currentLength += chunk.length
+  push(chunk: string) {
+    this.buffer += chunk
+    this.pushedChunks.push(chunk)
+    this._currentLength += chunk.length
   }
 
-  function flush(position: number) {
-    if (position > currentLength) {
+  /**
+   * Turn the buffer into a flat string, which is much faster to read character
+   * by character than the concatenated string created when pushing chunks.
+   * Joining creates a flat string, whereas reading a concatenated string only
+   * flattens it into a slower, indirect representation.
+   */
+  flatten() {
+    if (this.pushedChunks.length > 0) {
+      this.buffer = [this.flatBuffer, ...this.pushedChunks].join('')
+      this.flatBuffer = this.buffer
+      this.pushedChunks = []
+    }
+  }
+
+  flush(position: number) {
+    if (position > this._currentLength) {
       return
     }
 
-    buffer = buffer.substring(position - offset)
-    offset = position
+    this.flatten()
+    this.buffer = this.buffer.substring(position - this.offset)
+    this.flatBuffer = this.buffer
+    this.offset = position
   }
 
-  function charAt(index: number): string {
-    ensure(index)
+  charAt(index: number): string {
+    this.ensure(index)
 
-    return buffer.charAt(index - offset)
+    return this.buffer.charAt(index - this.offset)
   }
 
-  function charCodeAt(index: number): number {
-    ensure(index)
+  charCodeAt(index: number): number {
+    this.ensure(index)
 
-    return buffer.charCodeAt(index - offset)
+    return this.buffer.charCodeAt(index - this.offset)
   }
 
-  function substring(start: number, end: number): string {
-    ensure(end - 1) // -1 because end is excluded
-    ensure(start)
+  substring(start: number, end: number): string {
+    this.ensure(end - 1) // -1 because end is excluded
+    this.ensure(start)
 
-    return buffer.slice(start - offset, end - offset)
+    return this.buffer.slice(start - this.offset, end - this.offset)
   }
 
-  function length(): number {
-    if (!closed) {
+  length(): number {
+    if (!this.closed) {
       throw new Error('Cannot get length: input is not yet closed')
     }
 
-    return currentLength
+    return this._currentLength
   }
 
-  function isEnd(index: number): boolean {
-    if (!closed) {
-      ensure(index)
+  currentLength(): number {
+    return this._currentLength
+  }
+
+  currentBufferSize(): number {
+    return this.buffer.length
+  }
+
+  isEnd(index: number): boolean {
+    if (!this.closed) {
+      this.ensure(index)
     }
 
-    return index >= currentLength
+    return index >= this._currentLength
   }
 
-  function close() {
-    closed = true
-  }
-
-  return {
-    push,
-    flush,
-    charAt,
-    charCodeAt,
-    substring,
-    length,
-    currentLength: () => currentLength,
-    currentBufferSize: () => buffer.length,
-    isEnd,
-    close
+  close() {
+    this.closed = true
   }
 }
 
